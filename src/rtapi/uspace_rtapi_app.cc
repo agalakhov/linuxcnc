@@ -721,6 +721,30 @@ static void configure_memory()
     free(buf);
 }
 
+#ifdef __linux__
+static void setup_cpusets()
+{
+    const char* const cpuset = getenv("RTAPI_CPUSET");
+    if (cpuset && !strstr(cpuset, "..")) {
+        char buf[1024];
+        snprintf(buf, sizeof(buf), "/sys/fs/cgroup/cpuset/%s/tasks", cpuset);
+        int fd = open(buf, O_WRONLY | O_CLOEXEC);
+        if (fd < 0) {
+	    rtapi_print_msg(RTAPI_MSG_ERR, "CPU set \"%s\" does not exist: %s\n", cpuset, strerror(errno));
+	} else {
+	    snprintf(buf, sizeof(buf), "%u\n", getpid());
+	    int len = strlen(buf);
+            if (write(fd, buf, len) != len) {
+		rtapi_print_msg(RTAPI_MSG_ERR, "Can not use CPU set \"%s\": %s\n", cpuset, strerror(errno));
+	    } else {
+		rtapi_print_msg(RTAPI_MSG_INFO, "Using CPU set \"%s\"\n", cpuset);
+	    }
+	    close(fd);
+	}
+   }
+}
+#endif
+
 static int harden_rt()
 {
     if(!rtapi_is_realtime()) return -EINVAL;
@@ -739,6 +763,7 @@ static int harden_rt()
 
     struct sigaction sig_act = {};
 #ifdef __linux__
+    setup_cpusets();
     // enable realtime
     if (setrlimit(RLIMIT_RTPRIO, &unlimited) < 0)
     {
